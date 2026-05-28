@@ -28,12 +28,14 @@
     button { cursor: pointer; border: 0; font-weight: 800; background: var(--ink); color: #fff; }
     button.secondary { background: #fff; color: var(--ink); border: 1px solid var(--line); }
     button.danger { background: var(--danger); }
+    button.link { width: auto; height: auto; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--muted); }
     table { width: 100%; border-collapse: collapse; font-size: 14px; }
     th, td { padding: 10px 8px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
     th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
     .toolbar { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-bottom: 12px; }
     .pill { border-radius: 999px; padding: 6px 10px; background: rgba(255,122,26,.14); color: var(--ink); font-weight: 800; font-size: 12px; }
     .status { color: var(--muted); font-size: 13px; }
+    .hidden { display: none !important; }
     @media (max-width: 900px) { .grid { grid-template-columns: repeat(2, minmax(120px, 1fr)); } table { display: block; overflow: auto; } }
   </style>
 </head>
@@ -41,23 +43,22 @@
   <header>
     <div>
       <h1>MotoSheet Admin</h1>
-      <div class="status" id="status">Connect to the MotoSheet Supabase project below.</div>
+      <div class="status" id="status">Sign in with your building management account.</div>
     </div>
-    <span class="pill">Building management</span>
+    <span class="pill" id="sessionPill">Building management</span>
   </header>
 
   <main>
-    <section>
-      <h2>Connection</h2>
+    <section id="loginPanel">
+      <h2>Login</h2>
       <div class="grid">
-        <label>Supabase URL<input id="supabaseUrl" placeholder="https://xxxx.supabase.co"></label>
-        <label>Publishable key<input id="supabaseKey" placeholder="sb_publishable_..."></label>
-        <label>&nbsp;<button id="connect">Connect</button></label>
-        <label>&nbsp;<button class="secondary" id="saveConfig">Save config</button></label>
+        <label>User email<input id="loginEmail" type="email" autocomplete="username" placeholder="admin@example.com"></label>
+        <label>Password<input id="loginPassword" type="password" autocomplete="current-password" placeholder="Password"></label>
+        <label>&nbsp;<button id="loginButton">Login</button></label>
       </div>
     </section>
 
-    <section>
+    <section id="registerPanel" class="hidden">
       <h2>Register Motor</h2>
       <div class="grid">
         <label>Company<input id="company" placeholder="SM Global"></label>
@@ -72,11 +73,12 @@
       </div>
     </section>
 
-    <section>
+    <section id="motorsPanel" class="hidden">
       <div class="toolbar">
         <h2 style="margin-right:auto">Registered Motors</h2>
         <input id="motorSearch" placeholder="Search company or plate">
         <button class="secondary" id="refreshMotors">Refresh</button>
+        <button class="link" id="logoutButton">Logout</button>
       </div>
       <table>
         <thead><tr><th>Ref</th><th>No.</th><th>Company</th><th>Type</th><th>Months</th><th>Expiry</th><th>Brand</th><th>Model</th><th>Plate</th><th></th></tr></thead>
@@ -84,7 +86,7 @@
       </table>
     </section>
 
-    <section>
+    <section id="reportPanel" class="hidden">
       <div class="toolbar">
         <h2 style="margin-right:auto">Daily Report</h2>
         <input id="reportDate" type="date">

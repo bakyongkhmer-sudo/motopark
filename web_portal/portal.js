@@ -9,33 +9,24 @@ const $ = (id) => document.getElementById(id);
 const status = (text) => $('status').textContent = text;
 const today = new Date().toISOString().slice(0, 10);
 
-$('supabaseUrl').value = localStorage.getItem('motosheet.supabaseUrl') || defaultSupabaseUrl;
-$('supabaseKey').value = localStorage.getItem('motosheet.supabaseKey') || defaultSupabaseKey;
 $('reportDate').value = today;
 $('expiry').value = `${new Date().getFullYear() + 1}-01-01`;
+supabase = createClient(defaultSupabaseUrl, defaultSupabaseKey);
 
-$('saveConfig').onclick = () => {
-  localStorage.setItem('motosheet.supabaseUrl', $('supabaseUrl').value.trim());
-  localStorage.setItem('motosheet.supabaseKey', $('supabaseKey').value.trim());
-  status('Configuration saved in this browser.');
+$('loginButton').onclick = login;
+$('logoutButton').onclick = logout;
+$('loginPassword').onkeydown = (event) => {
+  if (event.key === 'Enter') login();
 };
 
-$('connect').onclick = async () => {
-  const url = $('supabaseUrl').value.trim();
-  const key = $('supabaseKey').value.trim();
-  if (!url || !key) return status('Enter Supabase URL and anon key first.');
-  supabase = createClient(url, key);
-  status('Connected. Loading data...');
-  await refreshMotors();
-  await refreshReport();
-};
+initAuth();
 
 $('refreshMotors').onclick = refreshMotors;
 $('refreshReport').onclick = refreshReport;
 $('motorSearch').oninput = renderMotors;
 
 $('addMotor').onclick = async () => {
-  if (!supabase) return status('Connect first.');
+  if (!await requireSession()) return;
   const companyName = $('company').value.trim();
   const plate = normalizePlate($('plate').value);
   if (!companyName || !plate || !$('expiry').value || !$('brand').value.trim() || !$('model').value.trim()) {
@@ -68,7 +59,7 @@ $('addMotor').onclick = async () => {
 };
 
 async function refreshMotors() {
-  if (!supabase) return status('Connect first.');
+  if (!await requireSession()) return;
   const { data, error } = await supabase
     .from('registered_motors')
     .select('id,ref,no,type,months,expiry_date,brand,model,plate,companies(name)')
@@ -111,7 +102,7 @@ function renderMotors() {
 }
 
 async function refreshReport() {
-  if (!supabase) return status('Connect first.');
+  if (!await requireSession()) return;
   const date = $('reportDate').value || today;
   const { data, error } = await supabase.from('daily_scan_report').select('*').eq('scan_date', date);
   if (error) return status(error.message);
@@ -132,6 +123,58 @@ async function refreshReport() {
     </tr>
   `).join('');
   status(`Loaded ${(data || []).length} report rows for ${date}.`);
+}
+
+async function initAuth() {
+  const { data } = await supabase.auth.getSession();
+  setSignedIn(data.session);
+  if (data.session) {
+    await refreshMotors();
+    await refreshReport();
+  }
+  supabase.auth.onAuthStateChange(async (_event, session) => {
+    setSignedIn(session);
+    if (session) {
+      await refreshMotors();
+      await refreshReport();
+    }
+  });
+}
+
+async function login() {
+  const email = $('loginEmail').value.trim();
+  const password = $('loginPassword').value;
+  if (!email || !password) return status('Enter user email and password.');
+  status('Signing in...');
+  const { error } = await supabase.auth.signInWithPassword({ email, password });
+  if (error) return status(error.message);
+  $('loginPassword').value = '';
+}
+
+async function logout() {
+  await supabase.auth.signOut();
+  motorRows = [];
+  $('motors').innerHTML = '';
+  $('report').innerHTML = '';
+  status('Signed out.');
+}
+
+async function requireSession() {
+  const { data } = await supabase.auth.getSession();
+  if (data.session) return true;
+  status('Please login first.');
+  setSignedIn(null);
+  return false;
+}
+
+function setSignedIn(session) {
+  const signedIn = Boolean(session);
+  $('loginPanel').classList.toggle('hidden', signedIn);
+  $('registerPanel').classList.toggle('hidden', !signedIn);
+  $('motorsPanel').classList.toggle('hidden', !signedIn);
+  $('reportPanel').classList.toggle('hidden', !signedIn);
+  $('sessionPill').textContent = signedIn ? session.user.email : 'Building management';
+  if (signedIn) status('Logged in. Loading data...');
 }
 
 function normalizePlate(value) {

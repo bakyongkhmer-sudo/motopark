@@ -1,10 +1,11 @@
--- MotoSheet simple access policies
--- Run this after supabase_schema.sql so the Vercel portal and Android app
--- can read/write with the Supabase publishable key.
+-- MotoSheet access policies
+-- Run this after supabase_schema.sql.
 --
--- This is suitable for a low-cost internal pilot. Before sharing the portal
--- publicly, add Supabase Auth and replace these broad policies with logged-in
--- building-management/officer roles.
+-- Web portal:
+--   Requires Supabase Auth login for registering, updating, and deleting motors.
+-- Android app:
+--   Can read the active registry and upload scan sessions/records with the
+--   publishable key, so officers do not need to log in on every phone.
 
 drop policy if exists "motosheet public read companies" on companies;
 drop policy if exists "motosheet public insert companies" on companies;
@@ -19,79 +20,66 @@ drop policy if exists "motosheet public update scan sessions" on scan_sessions;
 drop policy if exists "motosheet public read scan records" on scan_records;
 drop policy if exists "motosheet public insert scan records" on scan_records;
 drop policy if exists "motosheet public update scan records" on scan_records;
+drop policy if exists "motosheet read companies" on companies;
+drop policy if exists "motosheet manage companies after login" on companies;
+drop policy if exists "motosheet read registered motors" on registered_motors;
+drop policy if exists "motosheet manage registered motors after login" on registered_motors;
+drop policy if exists "motosheet read scan sessions" on scan_sessions;
+drop policy if exists "motosheet write scan sessions" on scan_sessions;
+drop policy if exists "motosheet read scan records" on scan_records;
+drop policy if exists "motosheet write scan records" on scan_records;
 
-create policy "motosheet public read companies"
+create policy "motosheet read companies"
 on companies for select
 to anon, authenticated
 using (true);
 
-create policy "motosheet public insert companies"
-on companies for insert
-to anon, authenticated
-with check (true);
-
-create policy "motosheet public update companies"
-on companies for update
-to anon, authenticated
+create policy "motosheet manage companies after login"
+on companies for all
+to authenticated
 using (true)
 with check (true);
 
-create policy "motosheet public read registered motors"
+create policy "motosheet read registered motors"
 on registered_motors for select
 to anon, authenticated
 using (true);
 
-create policy "motosheet public insert registered motors"
-on registered_motors for insert
-to anon, authenticated
-with check (true);
-
-create policy "motosheet public update registered motors"
-on registered_motors for update
-to anon, authenticated
+create policy "motosheet manage registered motors after login"
+on registered_motors for all
+to authenticated
 using (true)
 with check (true);
 
-create policy "motosheet public delete registered motors"
-on registered_motors for delete
-to anon, authenticated
-using (true);
-
-create policy "motosheet public read scan sessions"
+create policy "motosheet read scan sessions"
 on scan_sessions for select
 to anon, authenticated
 using (true);
 
-create policy "motosheet public insert scan sessions"
-on scan_sessions for insert
-to anon, authenticated
-with check (true);
-
-create policy "motosheet public update scan sessions"
-on scan_sessions for update
+create policy "motosheet write scan sessions"
+on scan_sessions for all
 to anon, authenticated
 using (true)
 with check (true);
 
-create policy "motosheet public read scan records"
+create policy "motosheet read scan records"
 on scan_records for select
 to anon, authenticated
 using (true);
 
-create policy "motosheet public insert scan records"
-on scan_records for insert
-to anon, authenticated
-with check (true);
-
-create policy "motosheet public update scan records"
-on scan_records for update
+create policy "motosheet write scan records"
+on scan_records for all
 to anon, authenticated
 using (true)
 with check (true);
 
 grant usage on schema public to anon, authenticated;
-grant select, insert, update on companies to anon, authenticated;
-grant select, insert, update, delete on registered_motors to anon, authenticated;
-grant select, insert, update on scan_sessions to anon, authenticated;
-grant select, insert, update on scan_records to anon, authenticated;
-grant select on daily_scan_report to anon, authenticated;
+grant select on companies to anon;
+grant select on registered_motors to anon;
+grant select, insert, update on scan_sessions to anon;
+grant select, insert, update on scan_records to anon;
+grant select, insert, update, delete on companies to authenticated;
+grant select, insert, update, delete on registered_motors to authenticated;
+grant select, insert, update on scan_sessions to authenticated;
+grant select, insert, update on scan_records to authenticated;
+grant select on daily_scan_report to authenticated;
