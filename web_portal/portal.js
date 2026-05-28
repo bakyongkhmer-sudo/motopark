@@ -2,6 +2,8 @@ import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js
 
 let supabase = null;
 let motorRows = [];
+let motorPage = 1;
+const motorPageSize = 25;
 
 const defaultSupabaseUrl = 'https://euzkccwlqewlikwezqsw.supabase.co';
 const defaultSupabaseKey = 'sb_publishable_94BN8Ucao1HLGztDoCZSGg_sH_wp0Ws';
@@ -23,7 +25,21 @@ initAuth();
 
 $('refreshMotors').onclick = refreshMotors;
 $('refreshReport').onclick = refreshReport;
-$('motorSearch').oninput = renderMotors;
+$('reportDate').onchange = refreshReport;
+$('motorSearch').oninput = () => {
+  motorPage = 1;
+  renderMotors();
+};
+$('prevMotors').onclick = () => {
+  if (motorPage > 1) {
+    motorPage -= 1;
+    renderMotors();
+  }
+};
+$('nextMotors').onclick = () => {
+  motorPage += 1;
+  renderMotors();
+};
 
 $('addMotor').onclick = async () => {
   if (!await requireSession()) return;
@@ -60,12 +76,14 @@ $('addMotor').onclick = async () => {
 
 async function refreshMotors() {
   if (!await requireSession()) return;
+  status('Loading registered motors...');
   const { data, error } = await supabase
     .from('registered_motors')
     .select('id,ref,no,type,months,expiry_date,brand,model,plate,companies(name)')
     .order('plate');
   if (error) return status(error.message);
   motorRows = data || [];
+  motorPage = 1;
   renderMotors();
   status(`Loaded ${motorRows.length} registered motors.`);
 }
@@ -76,7 +94,11 @@ function renderMotors() {
     const company = row.companies?.name || '';
     return !query || row.plate.toLowerCase().includes(query) || company.toLowerCase().includes(query);
   });
-  $('motors').innerHTML = rows.map((row) => `
+  const totalPages = Math.max(1, Math.ceil(rows.length / motorPageSize));
+  motorPage = Math.min(Math.max(1, motorPage), totalPages);
+  const start = (motorPage - 1) * motorPageSize;
+  const pageRows = rows.slice(start, start + motorPageSize);
+  $('motors').innerHTML = pageRows.length ? pageRows.map((row) => `
     <tr>
       <td>${escapeHtml(row.ref || '')}</td>
       <td>${escapeHtml(row.no || '')}</td>
@@ -89,7 +111,12 @@ function renderMotors() {
       <td><strong>${escapeHtml(row.plate || '')}</strong></td>
       <td><button class="danger" data-delete="${row.id}">Delete</button></td>
     </tr>
-  `).join('');
+  `).join('') : '<tr><td colspan="10"><div class="empty">No registered motors found.</div></td></tr>';
+  const first = rows.length ? start + 1 : 0;
+  const last = Math.min(start + pageRows.length, rows.length);
+  $('motorPageInfo').textContent = `${first}-${last} of ${rows.length} · page ${motorPage}/${totalPages}`;
+  $('prevMotors').disabled = motorPage <= 1;
+  $('nextMotors').disabled = motorPage >= totalPages;
 
   document.querySelectorAll('[data-delete]').forEach((button) => {
     button.onclick = async () => {
@@ -104,9 +131,18 @@ function renderMotors() {
 async function refreshReport() {
   if (!await requireSession()) return;
   const date = $('reportDate').value || today;
-  const { data, error } = await supabase.from('daily_scan_report').select('*').eq('scan_date', date);
+  status(`Loading report for ${date}...`);
+  $('report').innerHTML = '';
+  const { data, error } = await supabase
+    .from('daily_scan_report')
+    .select('*')
+    .eq('scan_date', date)
+    .order('company')
+    .order('plate_prefix')
+    .order('plate_number');
   if (error) return status(error.message);
-  $('report').innerHTML = (data || []).map((row) => `
+  const rows = (data || []).filter((row) => String(row.scan_date).slice(0, 10) === date);
+  $('report').innerHTML = rows.length ? rows.map((row) => `
     <tr>
       <td>${escapeHtml(row.ref || '')}</td>
       <td>${escapeHtml(row.no || '')}</td>
@@ -121,24 +157,28 @@ async function refreshReport() {
       <td>${row.morning ? '✓' : ''}</td>
       <td>${row.afternoon ? '✓' : ''}</td>
     </tr>
-  `).join('');
-  status(`Loaded ${(data || []).length} report rows for ${date}.`);
+  `).join('') : '<tr><td colspan="12"><div class="empty">No scan records for this date.</div></td></tr>';
+  status(`Loaded ${rows.length} report rows for ${date}.`);
 }
 
 async function initAuth() {
   const { data } = await supabase.auth.getSession();
   setSignedIn(data.session);
   if (data.session) {
-    await refreshMotors();
-    await refreshReport();
+    await loadDashboard();
   }
   supabase.auth.onAuthStateChange(async (_event, session) => {
     setSignedIn(session);
     if (session) {
-      await refreshMotors();
-      await refreshReport();
+      await loadDashboard();
     }
   });
+}
+
+async function loadDashboard() {
+  status('Loading data...');
+  await refreshMotors();
+  await refreshReport();
 }
 
 async function login() {
@@ -156,6 +196,7 @@ async function logout() {
   motorRows = [];
   $('motors').innerHTML = '';
   $('report').innerHTML = '';
+  $('motorPageInfo').textContent = '0 records';
   status('Signed out.');
 }
 
@@ -174,7 +215,7 @@ function setSignedIn(session) {
   $('motorsPanel').classList.toggle('hidden', !signedIn);
   $('reportPanel').classList.toggle('hidden', !signedIn);
   $('sessionPill').textContent = signedIn ? session.user.email : 'Building management';
-  if (signedIn) status('Logged in. Loading data...');
+  status(signedIn ? 'Logged in.' : 'Sign in with your building management account.');
 }
 
 function normalizePlate(value) {
