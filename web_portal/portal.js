@@ -3,12 +3,14 @@ import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js
 let supabase = null;
 let motorRows = [];
 
+const defaultSupabaseUrl = 'https://euzkccwlqewlikwezqsw.supabase.co';
+const defaultSupabaseKey = 'sb_publishable_94BN8Ucao1HLGztDoCZSGg_sH_wp0Ws';
 const $ = (id) => document.getElementById(id);
 const status = (text) => $('status').textContent = text;
 const today = new Date().toISOString().slice(0, 10);
 
-$('supabaseUrl').value = localStorage.getItem('motosheet.supabaseUrl') || '';
-$('supabaseKey').value = localStorage.getItem('motosheet.supabaseKey') || '';
+$('supabaseUrl').value = localStorage.getItem('motosheet.supabaseUrl') || defaultSupabaseUrl;
+$('supabaseKey').value = localStorage.getItem('motosheet.supabaseKey') || defaultSupabaseKey;
 $('reportDate').value = today;
 $('expiry').value = `${new Date().getFullYear() + 1}-01-01`;
 
