@@ -1,0 +1,149 @@
+import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
+
+let supabase = null;
+let motorRows = [];
+
+const $ = (id) => document.getElementById(id);
+const status = (text) => $('status').textContent = text;
+const today = new Date().toISOString().slice(0, 10);
+
+$('supabaseUrl').value = localStorage.getItem('motosheet.supabaseUrl') || '';
+$('supabaseKey').value = localStorage.getItem('motosheet.supabaseKey') || '';
+$('reportDate').value = today;
+$('expiry').value = `${new Date().getFullYear() + 1}-01-01`;
+
+$('saveConfig').onclick = () => {
+  localStorage.setItem('motosheet.supabaseUrl', $('supabaseUrl').value.trim());
+  localStorage.setItem('motosheet.supabaseKey', $('supabaseKey').value.trim());
+  status('Configuration saved in this browser.');
+};
+
+$('connect').onclick = async () => {
+  const url = $('supabaseUrl').value.trim();
+  const key = $('supabaseKey').value.trim();
+  if (!url || !key) return status('Enter Supabase URL and anon key first.');
+  supabase = createClient(url, key);
+  status('Connected. Loading data...');
+  await refreshMotors();
+  await refreshReport();
+};
+
+$('refreshMotors').onclick = refreshMotors;
+$('refreshReport').onclick = refreshReport;
+$('motorSearch').oninput = renderMotors;
+
+$('addMotor').onclick = async () => {
+  if (!supabase) return status('Connect first.');
+  const companyName = $('company').value.trim();
+  const plate = normalizePlate($('plate').value);
+  if (!companyName || !plate || !$('expiry').value || !$('brand').value.trim() || !$('model').value.trim()) {
+    return status('Company, plate, expiry, brand and model are required.');
+  }
+
+  let { data: company, error: companyError } = await supabase
+    .from('companies')
+    .upsert({ name: companyName }, { onConflict: 'name' })
+    .select('id,name')
+    .single();
+  if (companyError) return status(companyError.message);
+
+  const payload = {
+    company_id: company.id,
+    ref: $('ref').value.trim(),
+    no: $('no').value.trim(),
+    type: 'FOC',
+    months: Number($('months').value || 12),
+    expiry_date: $('expiry').value,
+    brand: $('brand').value.trim(),
+    model: $('model').value.trim(),
+    plate,
+  };
+  const { error } = await supabase.from('registered_motors').upsert(payload, { onConflict: 'plate' });
+  if (error) return status(error.message);
+  status(`Saved ${plate}`);
+  $('plate').value = '';
+  await refreshMotors();
+};
+
+async function refreshMotors() {
+  if (!supabase) return status('Connect first.');
+  const { data, error } = await supabase
+    .from('registered_motors')
+    .select('id,ref,no,type,months,expiry_date,brand,model,plate,companies(name)')
+    .order('plate');
+  if (error) return status(error.message);
+  motorRows = data || [];
+  renderMotors();
+  status(`Loaded ${motorRows.length} registered motors.`);
+}
+
+function renderMotors() {
+  const query = $('motorSearch').value.trim().toLowerCase();
+  const rows = motorRows.filter((row) => {
+    const company = row.companies?.name || '';
+    return !query || row.plate.toLowerCase().includes(query) || company.toLowerCase().includes(query);
+  });
+  $('motors').innerHTML = rows.map((row) => `
+    <tr>
+      <td>${escapeHtml(row.ref || '')}</td>
+      <td>${escapeHtml(row.no || '')}</td>
+      <td>${escapeHtml(row.companies?.name || '')}</td>
+      <td>${escapeHtml(row.type || 'FOC')}</td>
+      <td>${row.months || 12}</td>
+      <td>${formatDate(row.expiry_date)}</td>
+      <td>${escapeHtml(row.brand || '')}</td>
+      <td>${escapeHtml(row.model || '')}</td>
+      <td><strong>${escapeHtml(row.plate || '')}</strong></td>
+      <td><button class="danger" data-delete="${row.id}">Delete</button></td>
+    </tr>
+  `).join('');
+
+  document.querySelectorAll('[data-delete]').forEach((button) => {
+    button.onclick = async () => {
+      if (!confirm('Delete this registered motor?')) return;
+      const { error } = await supabase.from('registered_motors').delete().eq('id', button.dataset.delete);
+      if (error) return status(error.message);
+      await refreshMotors();
+    };
+  });
+}
+
+async function refreshReport() {
+  if (!supabase) return status('Connect first.');
+  const date = $('reportDate').value || today;
+  const { data, error } = await supabase.from('daily_scan_report').select('*').eq('scan_date', date);
+  if (error) return status(error.message);
+  $('report').innerHTML = (data || []).map((row) => `
+    <tr>
+      <td>${escapeHtml(row.ref || '')}</td>
+      <td>${escapeHtml(row.no || '')}</td>
+      <td>${escapeHtml(row.company || '')}</td>
+      <td>${escapeHtml(row.type || '')}</td>
+      <td>${row.months || ''}</td>
+      <td>${formatDate(row.expiry)}</td>
+      <td>${escapeHtml(row.brand || '')}</td>
+      <td>${escapeHtml(row.model || '')}</td>
+      <td>${escapeHtml(row.plate_prefix || '')}</td>
+      <td>${escapeHtml(row.plate_number || '')}</td>
+      <td>${row.morning ? '✓' : ''}</td>
+      <td>${row.afternoon ? '✓' : ''}</td>
+    </tr>
+  `).join('');
+  status(`Loaded ${(data || []).length} report rows for ${date}.`);
+}
+
+function normalizePlate(value) {
+  const raw = value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const match = raw.match(/^([0-9]?[A-Z]{1,4})([0-9]{4})$/);
+  return match ? `${match[1]}-${match[2]}` : value.toUpperCase().trim();
+}
+
+function formatDate(value) {
+  if (!value) return '';
+  const date = new Date(`${value}T00:00:00`);
+  return date.toLocaleDateString('en-GB', { day: '2-digit', month: 'short', year: '2-digit' }).replace(/ /g, '-');
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (char) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+}
