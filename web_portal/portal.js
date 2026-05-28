@@ -3,6 +3,7 @@ import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js
 let supabase = null;
 let motorRows = [];
 let motorPage = 1;
+let activeTab = 'motors';
 const motorPageSize = 25;
 
 const defaultSupabaseUrl = 'https://euzkccwlqewlikwezqsw.supabase.co';
@@ -17,6 +18,16 @@ supabase = createClient(defaultSupabaseUrl, defaultSupabaseKey);
 
 $('loginButton').onclick = login;
 $('logoutButton').onclick = logout;
+$('tabMotors').onclick = () => setActiveTab('motors');
+$('tabReport').onclick = () => setActiveTab('report');
+$('openRegister').onclick = openRegisterModal;
+$('closeRegister').onclick = closeRegisterModal;
+$('registerModal').onclick = (event) => {
+  if (event.target.id === 'registerModal') closeRegisterModal();
+};
+$('plate').onkeydown = (event) => {
+  if (event.key === 'Enter') $('addMotor').click();
+};
 $('loginPassword').onkeydown = (event) => {
   if (event.key === 'Enter') login();
 };
@@ -71,6 +82,7 @@ $('addMotor').onclick = async () => {
   if (error) return status(error.message);
   status(`Saved ${plate}`);
   $('plate').value = '';
+  closeRegisterModal();
   await refreshMotors();
 };
 
@@ -179,6 +191,7 @@ async function loadDashboard() {
   status('Loading data...');
   await refreshMotors();
   await refreshReport();
+  setActiveTab(activeTab);
 }
 
 async function login() {
@@ -211,11 +224,34 @@ async function requireSession() {
 function setSignedIn(session) {
   const signedIn = Boolean(session);
   $('loginPanel').classList.toggle('hidden', signedIn);
-  $('registerPanel').classList.toggle('hidden', !signedIn);
-  $('motorsPanel').classList.toggle('hidden', !signedIn);
-  $('reportPanel').classList.toggle('hidden', !signedIn);
+  $('appTabs').classList.toggle('hidden', !signedIn);
   $('sessionPill').textContent = signedIn ? session.user.email : 'Building management';
+  if (!signedIn) {
+    closeRegisterModal();
+    $('motorsPanel').classList.add('hidden');
+    $('reportPanel').classList.add('hidden');
+  } else {
+    setActiveTab(activeTab);
+  }
   status(signedIn ? 'Logged in.' : 'Sign in with your building management account.');
+}
+
+function setActiveTab(tab) {
+  activeTab = tab;
+  const showMotors = tab === 'motors';
+  $('motorsPanel').classList.toggle('hidden', !showMotors);
+  $('reportPanel').classList.toggle('hidden', showMotors);
+  $('tabMotors').classList.toggle('active', showMotors);
+  $('tabReport').classList.toggle('active', !showMotors);
+}
+
+function openRegisterModal() {
+  $('registerModal').classList.remove('hidden');
+  $('company').focus();
+}
+
+function closeRegisterModal() {
+  $('registerModal').classList.add('hidden');
 }
 
 function normalizePlate(value) {
