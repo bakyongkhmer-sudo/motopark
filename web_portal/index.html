@@ -31,6 +31,8 @@
     button.link { width: auto; height: auto; padding: 0; border: 0; border-radius: 0; background: transparent; color: var(--muted); }
     button.tab { background: #fff; color: var(--muted); border: 1px solid var(--line); }
     button.tab.active { background: var(--ink); color: #fff; border-color: var(--ink); }
+    button.day { background: #fff; color: var(--ink); border: 1px solid var(--line); min-width: 92px; }
+    button.day.active { background: rgba(255,122,26,.16); color: var(--ink); border-color: rgba(255,122,26,.45); }
     table { width: 100%; border-collapse: collapse; font-size: 14px; }
     th, td { padding: 10px 8px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
     th { color: var(--muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; }
@@ -41,6 +43,7 @@
     .pill { border-radius: 999px; padding: 6px 10px; background: rgba(255,122,26,.14); color: var(--ink); font-weight: 800; font-size: 12px; }
     .status { color: var(--muted); font-size: 13px; }
     .tabs { display: flex; gap: 10px; align-items: center; }
+    .day-strip { display: flex; gap: 8px; flex-wrap: wrap; width: 100%; }
     .modal { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 20px; background: rgba(15, 23, 42, .38); }
     .modal-card { width: min(980px, 100%); max-height: min(720px, 92vh); overflow: auto; background: var(--surface); border-radius: 18px; border: 1px solid var(--line); box-shadow: 0 18px 50px rgba(15, 23, 42, .24); padding: 18px; }
     .modal-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
@@ -100,6 +103,7 @@
         <h2 style="margin-right:auto">Daily Report</h2>
         <input id="reportDate" type="date">
         <button class="secondary" id="refreshReport">Refresh report</button>
+        <div class="day-strip" id="reportDays"></div>
       </div>
       <table>
         <thead><tr><th>Ref</th><th>No.</th><th>Company</th><th>Type</th><th>Months</th><th>Expiry</th><th>Brand</th><th>Model</th><th>Plate Prefix</th><th>Plate Number</th><th>Morning</th><th>Afternoon</th></tr></thead>

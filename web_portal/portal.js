@@ -10,10 +10,11 @@ const defaultSupabaseUrl = 'https://euzkccwlqewlikwezqsw.supabase.co';
 const defaultSupabaseKey = 'sb_publishable_94BN8Ucao1HLGztDoCZSGg_sH_wp0Ws';
 const $ = (id) => document.getElementById(id);
 const status = (text) => $('status').textContent = text;
-const today = new Date().toISOString().slice(0, 10);
+const today = toDateValue(new Date());
 
 $('reportDate').value = today;
 $('expiry').value = `${new Date().getFullYear() + 1}-01-01`;
+renderReportDayButtons();
 supabase = createClient(defaultSupabaseUrl, defaultSupabaseKey);
 
 $('loginButton').onclick = login;
@@ -36,7 +37,10 @@ initAuth();
 
 $('refreshMotors').onclick = refreshMotors;
 $('refreshReport').onclick = refreshReport;
-$('reportDate').onchange = refreshReport;
+$('reportDate').onchange = () => {
+  renderReportDayButtons();
+  refreshReport();
+};
 $('motorSearch').oninput = () => {
   motorPage = 1;
   renderMotors();
@@ -171,6 +175,7 @@ async function refreshReport() {
     </tr>
   `).join('') : '<tr><td colspan="12"><div class="empty">No scan records for this date.</div></td></tr>';
   status(`Loaded ${rows.length} report rows for ${date}.`);
+  renderReportDayButtons();
 }
 
 async function initAuth() {
@@ -252,6 +257,37 @@ function openRegisterModal() {
 
 function closeRegisterModal() {
   $('registerModal').classList.add('hidden');
+}
+
+function renderReportDayButtons() {
+  const selected = $('reportDate').value || today;
+  const base = parseDateValue(today);
+  $('reportDays').innerHTML = Array.from({ length: 5 }, (_, index) => {
+    const date = new Date(base);
+    date.setDate(base.getDate() - index);
+    const value = toDateValue(date);
+    const label = index === 0 ? 'Today' : date.toLocaleDateString('en-US', { weekday: 'short', day: 'numeric' });
+    return `<button class="day ${value === selected ? 'active' : ''}" data-report-day="${value}">${label}</button>`;
+  }).join('');
+  document.querySelectorAll('[data-report-day]').forEach((button) => {
+    button.onclick = () => {
+      $('reportDate').value = button.dataset.reportDay;
+      renderReportDayButtons();
+      refreshReport();
+    };
+  });
+}
+
+function parseDateValue(value) {
+  const [year, month, day] = value.split('-').map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function toDateValue(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
 }
 
 function normalizePlate(value) {
