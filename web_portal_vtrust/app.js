@@ -90,7 +90,8 @@ function isSoon(motor) {
 
 function plateChip(plate) {
   const { prefix, number } = plateParts(plate);
-  return `<div class="plate"><span>${esc(prefix)}</span><b>${esc(number)}</b></div>`;
+  const displayPlate = [prefix, number].filter(Boolean).join('-');
+  return `<div class="plate"><b>${esc(displayPlate)}</b><span class="plate-line"></span><small>PHNOM PENH</small></div>`;
 }
 
 async function loadData() {
@@ -293,7 +294,7 @@ function bindLogin() {
     render();
     const { data, error } = await supabase.auth.signInWithPassword({ email, password });
     if (error) {
-      state.message = error.message;
+      state.message = friendlyAuthError(error.message);
       render();
       return;
     }
@@ -637,22 +638,32 @@ async function addAdminUser() {
     render();
     return;
   }
+  const needsConfirmation = !data.session;
   const { error: profileError } = await supabase.from('portal_admin_users').upsert({
     user_id: data.user?.id || null,
     email,
     full_name: fullName,
     role,
-    status: data.user?.identities?.length === 0 ? 'existing' : 'active',
+    status: needsConfirmation ? 'pending confirmation' : data.user?.identities?.length === 0 ? 'existing' : 'active',
     updated_at: new Date().toISOString(),
   }, { onConflict: 'email' });
   if (profileError) {
     state.message = profileError.message;
   } else {
-    state.message = `Added ${email}.`;
+    state.message = needsConfirmation
+      ? `Added ${email}. Confirm the email in Supabase Auth, or run supabase_confirm_vtrust_users.sql.`
+      : `Added ${email}.`;
   }
   closeModal();
   await loadAdminUsers();
   render();
+}
+
+function friendlyAuthError(message) {
+  if (String(message).toLowerCase().includes('email not confirmed')) {
+    return 'Email not confirmed. Confirm this user in Supabase Auth, or run supabase_confirm_vtrust_users.sql.';
+  }
+  return message;
 }
 
 function exportReportCsv() {
