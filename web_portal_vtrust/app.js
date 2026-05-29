@@ -7,6 +7,14 @@ const app = document.getElementById('app');
 const modalRoot = document.getElementById('modalRoot');
 const today = '2026-05-29';
 
+const defaultSettings = {
+  general: { buildingName: 'Vtrust Tower', address: 'No. 138, Norodom Blvd, Phnom Penh', buildingCode: 'PNH-VT', capacity: 240, timezone: 'Asia/Phnom_Penh', language: 'English', dateFormat: 'YYYY-MM-DD' },
+  scan: { morningStart: '08:00', morningEnd: '11:30', afternoonStart: '14:00', afternoonEnd: '17:30', lateTolerance: 15, requireBothRounds: true },
+  reminders: { daysBefore: 30, emailTenant: true, dailyDigest: true, subject: 'Motor registration renewal reminder' },
+  integrations: { apiEnabled: true, sendGrid: 'connected', googleDrive: 'connected', slack: 'off' },
+  billing: { plan: 'Building Pro', price: '49', billingEmail: 'parking@vtrusttower.com.kh', taxId: 'K001-1234-5678' },
+};
+
 const seedCompanies = [
   { id: 'C01', code: 'SMG', name: 'Sokimex Global', floor: 'L12', contact: 'Chea Sopheaktra', phone: '+855 12 345 678', motorCount: 12 },
   { id: 'C02', code: 'NXT', name: 'Nexlogix Cambodia', floor: 'L08', contact: 'Sok Bopha', phone: '+855 17 224 668', motorCount: 18 },
@@ -34,7 +42,10 @@ const seedMotors = [
 }));
 
 const state = {
-  route: localStorage.getItem('vtrust.auth') ? 'dashboard' : 'login',
+  route: 'login',
+  user: null,
+  admins: [],
+  portalSettings: structuredClone(defaultSettings),
   settings: 'general',
   motors: [],
   report: [],
@@ -46,6 +57,7 @@ const state = {
   reportDate: today,
   reportFilter: 'all',
   selectedCompany: seedCompanies[0].id,
+  message: '',
 };
 
 function h(strings, ...values) {
@@ -82,6 +94,8 @@ function plateChip(plate) {
 }
 
 async function loadData() {
+  await loadPortalSettings();
+  await loadAdminUsers();
   try {
     const { data: motorRows, error } = await supabase
       .from('registered_motors')
@@ -114,6 +128,61 @@ async function loadData() {
     state.motors = seedMotors;
   }
   await loadReport();
+}
+
+async function loadPortalSettings() {
+  try {
+    const { data, error } = await supabase.from('portal_settings').select('key,value');
+    if (error) throw error;
+    const next = structuredClone(defaultSettings);
+    for (const row of data || []) {
+      next[row.key] = { ...(next[row.key] || {}), ...(row.value || {}) };
+    }
+    state.portalSettings = next;
+  } catch (_) {
+    state.portalSettings = structuredClone(defaultSettings);
+  }
+}
+
+async function savePortalSetting(key, value) {
+  const { error } = await supabase.from('portal_settings').upsert({
+    key,
+    value,
+    updated_at: new Date().toISOString(),
+  });
+  if (error) {
+    state.message = error.message;
+    render();
+    return;
+  }
+  state.portalSettings[key] = value;
+  state.message = 'Settings saved.';
+  render();
+}
+
+async function loadAdminUsers() {
+  if (!state.user) return;
+  try {
+    await supabase.from('portal_admin_users').upsert({
+      user_id: state.user.id,
+      email: state.user.email,
+      full_name: state.user.user_metadata?.full_name || state.user.email?.split('@')[0] || 'Admin user',
+      role: 'Building admin',
+      status: 'active',
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'email' });
+    const { data, error } = await supabase.from('portal_admin_users').select('*').order('created_at');
+    if (error) throw error;
+    state.admins = data || [];
+  } catch (_) {
+    state.admins = [{
+      id: 'local-admin',
+      email: state.user.email,
+      full_name: state.user.email?.split('@')[0] || 'Admin user',
+      role: 'Building admin',
+      status: 'active',
+    }];
+  }
 }
 
 async function loadReport() {
@@ -193,9 +262,10 @@ function loginView() {
         <div class="login-form">
           <h1>Welcome back,<br>Sokha</h1>
           <p>Manage tenant motors, daily scan reports, and renewal reminders for Vtrust Tower, Phnom Penh.</p>
-          <label class="field">Email<input class="input" id="email" value="phon.sokha@vtrusttower.com.kh"></label>
-          <label class="field"><span class="field-row">Password <a class="muted">Forgot?</a></span><input class="input" id="password" type="password" value="motosheet"></label>
+          <label class="field">Email<input class="input" id="email" value="${esc(localStorage.getItem('vtrust.email') || '')}" placeholder="admin@vtrusttower.com.kh"></label>
+          <label class="field"><span class="field-row">Password <a class="muted">Forgot?</a></span><input class="input" id="password" type="password" placeholder="Password"></label>
           <label class="check-row"><input type="checkbox" checked> Keep me signed in on this device</label>
+          ${state.message ? `<div class="badge red" style="height:auto;padding:8px;margin-bottom:12px">${esc(state.message)}</div>` : ''}
           <button class="primary" id="signIn" style="width:100%">Sign in →</button>
         </div>
         <div class="muted">© 2026 MotoSheet · v2.4.1 · Vtrust Tower G/F Building Management</div>
@@ -212,10 +282,30 @@ function loginView() {
 
 function bindLogin() {
   document.getElementById('signIn').onclick = async () => {
-    localStorage.setItem('vtrust.auth', '1');
+    const email = document.getElementById('email').value.trim();
+    const password = document.getElementById('password').value;
+    if (!email || !password) {
+      state.message = 'Enter email and password.';
+      render();
+      return;
+    }
+    state.message = 'Signing in...';
+    render();
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+      state.message = error.message;
+      render();
+      return;
+    }
+    localStorage.setItem('vtrust.email', email);
+    state.user = data.user;
+    state.message = '';
     state.route = 'dashboard';
     await loadData();
     render();
+  };
+  document.getElementById('password').onkeydown = (event) => {
+    if (event.key === 'Enter') document.getElementById('signIn').click();
   };
 }
 
@@ -233,7 +323,7 @@ function shell(title, subtitle, content) {
         <div class="side-brand brand-row"><div class="brand-mark">☍</div><div class="brand-copy"><div class="eyebrow">MOTOSHEET</div><div class="title" style="color:white">Vtrust Tower</div></div></div>
         <div class="side-main"><div class="side-label">MAIN</div>${nav.map(([id, icon, label, count]) => `<button class="nav-item ${state.route === id ? 'active' : ''}" data-nav="${id}"><span>${icon}</span>${label}<span class="nav-count">${count}</span></button>`).join('')}</div>
         <div class="renew-card"><span class="live">● Renewals</span><b>1 expired · 2 expiring</b><span class="muted">Send reminders to tenants today.</span></div>
-        <div class="user-row"><div class="avatar">PS</div><div><b style="color:white">Phon Sokha</b><br><span class="muted">Building admin</span></div><button class="logout" id="logout">→</button></div>
+        <div class="user-row"><div class="avatar">${esc(userInitials())}</div><div><b style="color:white">${esc(userName())}</b><br><span class="muted">Building admin</span></div><button class="logout" id="logout">→</button></div>
       </aside>
       <main class="main">
         <header class="topbar"><div><h1>${title}</h1><div class="muted">${subtitle}</div></div><div style="display:flex;gap:18px;align-items:center"><input class="search" placeholder="⌕  Quick search..."><button class="bell">♧</button></div></header>
@@ -244,14 +334,24 @@ function shell(title, subtitle, content) {
 
 function bindShell() {
   document.querySelectorAll('[data-nav]').forEach((btn) => btn.onclick = () => navigate(btn.dataset.nav));
-  document.getElementById('logout').onclick = () => {
-    localStorage.removeItem('vtrust.auth');
+  document.getElementById('logout').onclick = async () => {
+    await supabase.auth.signOut();
+    state.user = null;
+    state.message = '';
     navigate('login');
   };
   if (state.route === 'motors') bindMotors();
   if (state.route === 'reports') bindReports();
   if (state.route === 'companies') bindCompanies();
   if (state.route === 'settings') bindSettings();
+}
+
+function userName() {
+  return state.user?.user_metadata?.full_name || state.user?.email?.split('@')[0] || 'Admin user';
+}
+
+function userInitials() {
+  return userName().split(/[.\s_-]+/).map((part) => part[0]).join('').slice(0, 2).toUpperCase() || 'AD';
 }
 
 function currentPage() {
@@ -375,7 +475,8 @@ function bindCompanies() {
 
 function settingsPage() {
   const tabs = ['general', 'scan', 'reminders', 'admins', 'audit', 'integrations', 'billing'];
-  return h`<div class="settings-layout"><div><div class="card-pad">${tabs.map((tab) => `<div class="settings-tab ${state.settings === tab ? 'active' : ''}" data-setting="${tab}">⋯ ${settingTitle(tab)}</div>`).join('')}</div><div class="muted" style="padding:120px 12px 0">MotoSheet v2.4.1<br>Building plan · G/F admin</div></div><div class="settings-content">${settingsContent(state.settings)}<div class="savebar"><span class="muted">● Unsaved changes</span><button class="secondary">Discard</button><button class="primary">✓ Save changes</button></div></div></div>`;
+  const editable = ['general', 'scan', 'reminders', 'integrations', 'billing'].includes(state.settings);
+  return h`<div class="settings-layout"><div><div class="card-pad">${tabs.map((tab) => `<div class="settings-tab ${state.settings === tab ? 'active' : ''}" data-setting="${tab}">⋯ ${settingTitle(tab)}</div>`).join('')}</div><div class="muted" style="padding:120px 12px 0">MotoSheet v2.4.1<br>Building plan · G/F admin</div></div><div class="settings-content">${state.message ? `<div class="badge green" style="height:auto;padding:8px">${esc(state.message)}</div>` : ''}${settingsContent(state.settings)}${editable ? '<div class="savebar"><span class="muted">● Editable settings</span><button class="secondary" id="reloadSettings">Discard</button><button class="primary" id="saveSettings">✓ Save changes</button></div>' : ''}</div></div>`;
 }
 
 function settingTitle(tab) {
@@ -383,21 +484,98 @@ function settingTitle(tab) {
 }
 
 function settingsContent(tab) {
-  if (tab === 'scan') return cards(['Scan windows', 'Morning round 08:00-11:30 · Afternoon 14:00-17:30', 'Per-day overrides']);
-  if (tab === 'reminders') return cards(['Renewal reminders', 'Notify when expiry is within · 30 days', 'Email template', 'Scheduled sends · next 7 days']);
-  if (tab === 'admins') return cards(['People', 'Phon Sokha · Building admin', 'Hun Bunna · Parking officer', 'Roles & permissions']);
-  if (tab === 'audit') return cards(['Activity log', 'Hun Bunna scanned 2C-9981', 'System exported daily report', 'Retention']);
-  if (tab === 'integrations') return cards(['API & webhooks', 'Email & messaging', 'Storage & export', 'Accounting']);
-  if (tab === 'billing') return cards(['Current plan · Building Pro', 'Payment method', 'Billing contact & tax', 'Invoices', 'Danger zone']);
-  return cards(['Building', 'Name · Vtrust Tower', 'Locale · Asia/Phnom_Penh', 'Brand & appearance']);
+  const s = state.portalSettings;
+  if (tab === 'scan') return h`${cardForm('Scan windows', [
+    inputRow('Morning start', 'morningStart', s.scan.morningStart, 'time'),
+    inputRow('Morning end', 'morningEnd', s.scan.morningEnd, 'time'),
+    inputRow('Afternoon start', 'afternoonStart', s.scan.afternoonStart, 'time'),
+    inputRow('Afternoon end', 'afternoonEnd', s.scan.afternoonEnd, 'time'),
+    inputRow('Late tolerance minutes', 'lateTolerance', s.scan.lateTolerance, 'number'),
+    toggleRow('Require both rounds', 'requireBothRounds', s.scan.requireBothRounds),
+  ])}${cards(['Per-day overrides'])}`;
+  if (tab === 'reminders') return cardForm('Renewal reminders', [
+    inputRow('Notify days before expiry', 'daysBefore', s.reminders.daysBefore, 'number'),
+    inputRow('Email subject', 'subject', s.reminders.subject),
+    toggleRow('Email tenant', 'emailTenant', s.reminders.emailTenant),
+    toggleRow('Daily digest to admin', 'dailyDigest', s.reminders.dailyDigest),
+  ]);
+  if (tab === 'admins') return adminsContent();
+  if (tab === 'audit') return auditContent();
+  if (tab === 'integrations') return cardForm('Integrations', [
+    toggleRow('API enabled', 'apiEnabled', s.integrations.apiEnabled),
+    inputRow('SendGrid', 'sendGrid', s.integrations.sendGrid),
+    inputRow('Google Drive', 'googleDrive', s.integrations.googleDrive),
+    inputRow('Slack', 'slack', s.integrations.slack),
+  ]);
+  if (tab === 'billing') return cardForm('Billing', [
+    inputRow('Plan', 'plan', s.billing.plan),
+    inputRow('Monthly price USD', 'price', s.billing.price, 'number'),
+    inputRow('Billing email', 'billingEmail', s.billing.billingEmail, 'email'),
+    inputRow('Tax ID', 'taxId', s.billing.taxId),
+  ]);
+  return h`${cardForm('Building', [
+    inputRow('Name', 'buildingName', s.general.buildingName),
+    inputRow('Address', 'address', s.general.address),
+    inputRow('Building code', 'buildingCode', s.general.buildingCode),
+    inputRow('Lot capacity', 'capacity', s.general.capacity, 'number'),
+  ])}${cardForm('Locale', [
+    inputRow('Timezone', 'timezone', s.general.timezone),
+    inputRow('Language', 'language', s.general.language),
+    inputRow('Date format', 'dateFormat', s.general.dateFormat),
+  ])}`;
 }
 
 function cards(items) {
   return items.map((item, index) => `<div class="card card-pad"><h3 class="card-title">${esc(item)}</h3><p class="muted">${index === 0 ? 'Configure this section for Vtrust Tower.' : 'Settings preview based on the design handoff.'}</p></div>`).join('');
 }
 
+function cardForm(title, rows) {
+  return `<div class="card card-pad"><h3 class="card-title">${esc(title)}</h3><div class="dialog-grid" style="margin-top:14px">${rows.join('')}</div></div>`;
+}
+
+function inputRow(label, key, value, type = 'text') {
+  return `<label class="field">${esc(label)}<input class="input" data-setting-input="${key}" type="${type}" value="${esc(value)}"></label>`;
+}
+
+function toggleRow(label, key, value) {
+  return `<label class="check-row" style="margin:0"><input type="checkbox" data-setting-input="${key}" ${value ? 'checked' : ''}> ${esc(label)}</label>`;
+}
+
+function adminsContent() {
+  return h`<div class="card"><div class="card-pad field-row"><div><h3 class="card-title">People</h3><span class="muted">${state.admins.length} portal users</span></div><button class="primary" id="inviteAdmin">+ Add user</button></div>${state.admins.map((user) => `<div class="list-row"><div class="avatar">${esc((user.full_name || user.email).split(/\s+/).map(p => p[0]).join('').slice(0,2).toUpperCase())}</div><div style="flex:1"><b>${esc(user.full_name)}</b><br><span class="muted">${esc(user.email)}</span></div><span class="badge ${user.role === 'Building admin' ? 'yellow' : 'blue'}">${esc(user.role)}</span><span class="badge green">${esc(user.status)}</span></div>`).join('')}</div><div class="card"><div class="card-pad"><h3 class="card-title">Roles & permissions</h3></div><table><thead><tr><th>Capability</th><th>Building admin</th><th>Officer</th></tr></thead><tbody><tr><td>Scan plates</td><td>✓</td><td>✓</td></tr><tr><td>Edit master registry</td><td>✓</td><td>—</td></tr><tr><td>Manage settings</td><td>✓</td><td>—</td></tr></tbody></table></div>`;
+}
+
+function auditContent() {
+  return `<div class="card"><div class="card-pad field-row"><div><h3 class="card-title">Activity log</h3><span class="muted">Latest portal events</span></div><button class="secondary">Export CSV</button></div><div class="list-row"><span class="dot"></span><div><b>${esc(userName())}</b><br><span class="muted">Logged in to portal</span></div><span class="mono muted">${new Date().toISOString().slice(0,16).replace('T',' ')}</span></div><div class="list-row"><span class="dot yellow"></span><div><b>System</b><br><span class="muted">Settings table connected</span></div><span class="mono muted">now</span></div></div>`;
+}
+
 function bindSettings() {
   document.querySelectorAll('[data-setting]').forEach((row) => row.onclick = () => { state.settings = row.dataset.setting; render(); });
+  const save = document.getElementById('saveSettings');
+  if (save) {
+    save.onclick = () => {
+      const current = { ...(state.portalSettings[state.settings] || {}) };
+      document.querySelectorAll('[data-setting-input]').forEach((input) => {
+        const key = input.dataset.settingInput;
+        if (input.type === 'checkbox') {
+          current[key] = input.checked;
+        } else if (input.type === 'number') {
+          current[key] = Number(input.value || 0);
+        } else {
+          current[key] = input.value;
+        }
+      });
+      savePortalSetting(state.settings, current);
+    };
+  }
+  const reload = document.getElementById('reloadSettings');
+  if (reload) reload.onclick = async () => {
+    state.message = '';
+    await loadPortalSettings();
+    render();
+  };
+  const invite = document.getElementById('inviteAdmin');
+  if (invite) invite.onclick = openAdminModal;
 }
 
 function openMotorModal() {
@@ -426,6 +604,57 @@ function closeModal() {
   modalRoot.innerHTML = '';
 }
 
+function openAdminModal() {
+  modalRoot.innerHTML = h`<div class="modal"><div class="dialog"><div class="dialog-head"><div><div class="caps">Admin user</div><h2>Add portal user</h2></div><button class="secondary" id="closeModal">Close</button></div><div class="dialog-body"><label class="field">Full name<input class="input" id="adminName" placeholder="Hun Bunna"></label><label class="field">Email<input class="input" id="adminEmail" type="email" placeholder="hun.bunna@vtrusttower.com.kh"></label><label class="field">Temporary password<input class="input" id="adminPassword" type="password" placeholder="At least 6 characters"></label><label class="field">Role<select class="input" id="adminRole"><option>Building admin</option><option>Parking officer</option><option>Viewer</option></select></label><p class="muted">This creates a Supabase Auth user using email/password sign-up, then stores the portal profile in the database.</p></div><div class="dialog-foot"><button class="secondary" id="cancelModal">Cancel</button><button class="primary" id="saveAdmin">Add user</button></div></div></div>`;
+  document.getElementById('closeModal').onclick = closeModal;
+  document.getElementById('cancelModal').onclick = closeModal;
+  document.getElementById('saveAdmin').onclick = addAdminUser;
+}
+
+async function addAdminUser() {
+  const fullName = document.getElementById('adminName').value.trim();
+  const email = document.getElementById('adminEmail').value.trim();
+  const password = document.getElementById('adminPassword').value;
+  const role = document.getElementById('adminRole').value;
+  if (!fullName || !email || password.length < 6) {
+    state.message = 'Name, email, and password with at least 6 characters are required.';
+    closeModal();
+    render();
+    return;
+  }
+  const currentSession = await supabase.auth.getSession();
+  const { data, error } = await supabase.auth.signUp({
+    email,
+    password,
+    options: { data: { full_name: fullName, role } },
+  });
+  if (currentSession.data.session) {
+    await supabase.auth.setSession(currentSession.data.session);
+  }
+  if (error) {
+    state.message = error.message;
+    closeModal();
+    render();
+    return;
+  }
+  const { error: profileError } = await supabase.from('portal_admin_users').upsert({
+    user_id: data.user?.id || null,
+    email,
+    full_name: fullName,
+    role,
+    status: data.user?.identities?.length === 0 ? 'existing' : 'active',
+    updated_at: new Date().toISOString(),
+  }, { onConflict: 'email' });
+  if (profileError) {
+    state.message = profileError.message;
+  } else {
+    state.message = `Added ${email}.`;
+  }
+  closeModal();
+  await loadAdminUsers();
+  render();
+}
+
 function exportReportCsv() {
   const header = ['Ref','No.','Company','Type','Months','Expiry','Brand','Model','Plate Prefix','Plate Number','Morning','Afternoon'];
   const lines = [header, ...state.report.map((r) => [r.ref,r.no,r.company,r.type,r.months,r.expiry,r.brand,r.model,r.platePrefix,r.plateNumber,r.morning,r.afternoon])];
@@ -436,5 +665,12 @@ function exportReportCsv() {
   link.click();
 }
 
-await loadData();
-render();
+async function init() {
+  const { data } = await supabase.auth.getSession();
+  state.user = data.session?.user || null;
+  state.route = state.user ? 'dashboard' : 'login';
+  if (state.user) await loadData();
+  render();
+}
+
+await init();

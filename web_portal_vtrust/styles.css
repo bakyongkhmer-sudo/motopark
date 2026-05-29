@@ -46,6 +46,8 @@ button { cursor: pointer; }
 .input:focus { border-color: var(--ink); box-shadow: 0 0 0 3px rgba(15,23,42,.08); }
 .check-row { display: flex; gap: 9px; align-items: center; color: var(--ink2); margin: 18px 0 26px; }
 .check-row input { width: 18px; height: 18px; accent-color: var(--ink); }
+.settings-content .field { margin-bottom: 0; }
+.settings-content .check-row { min-height: 46px; padding: 0 14px; border: 1px solid var(--line); border-radius: 12px; background: white; }
 .primary { height: 44px; border: 0; border-radius: 10px; background: var(--ink); color: white; font-weight: 800; padding: 0 16px; }
 .secondary { height: 38px; border: 1px solid var(--line); border-radius: 10px; background: white; color: var(--ink); font-weight: 800; padding: 0 14px; }
 .danger { height: 34px; border: 0; border-radius: 9px; background: var(--danger); color: white; font-weight: 800; padding: 0 12px; }
