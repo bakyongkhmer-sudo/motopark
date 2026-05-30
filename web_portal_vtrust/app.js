@@ -5,7 +5,40 @@ const SUPABASE_KEY = 'sb_publishable_94BN8Ucao1HLGztDoCZSGg_sH_wp0Ws';
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 const app = document.getElementById('app');
 const modalRoot = document.getElementById('modalRoot');
-const today = '2026-05-29';
+const today = dateKey(new Date());
+
+function dateKey(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const day = String(date.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function parseDateKey(value) {
+  const [year, month, day] = String(value).split('-').map(Number);
+  return new Date(year, (month || 1) - 1, day || 1);
+}
+
+function prettyDate(value, options = {}) {
+  const format = {
+    weekday: options.weekday ?? 'short',
+    day: '2-digit',
+    month: 'short',
+  };
+  if (options.year !== false) format.year = options.year ?? 'numeric';
+  return parseDateKey(value).toLocaleDateString('en-GB', format);
+}
+
+function weekdayName(value) {
+  return parseDateKey(value).toLocaleDateString('en-GB', { weekday: 'long' });
+}
+
+function monthTitle(value) {
+  return parseDateKey(value).toLocaleDateString('en-GB', {
+    month: 'long',
+    year: 'numeric',
+  });
+}
 
 const defaultSettings = {
   general: { buildingName: 'Vtrust Tower', address: 'No. 138, Norodom Blvd, Phnom Penh', buildingCode: 'PNH-VT', capacity: 240, timezone: 'Asia/Phnom_Penh', language: 'English', dateFormat: 'YYYY-MM-DD' },
@@ -236,7 +269,7 @@ function navigate(route) {
 
 function pageTitle() {
   return {
-    dashboard: ['Dashboard', 'Vtrust Tower, Phnom Penh · Friday 29 May 2026'],
+    dashboard: ['Dashboard', `Vtrust Tower, Phnom Penh · ${prettyDate(today)}`],
     motors: ['Motors', `${state.motors.length} registered motors across ${state.companies.length} tenants`],
     reports: ['Daily reports', 'Twice-daily scans · exportable to Excel'],
     companies: ['Companies', `${state.companies.length} tenants in the building`],
@@ -263,6 +296,10 @@ function loginView() {
         <div class="login-form">
           <h1>Welcome back,<br>Sokha</h1>
           <p>Manage tenant motors, daily scan reports, and renewal reminders for Vtrust Tower, Phnom Penh.</p>
+          <div class="login-plate-preview">
+            ${plateChip('1HH-4722')}
+            <div><b>Plate format preview</b><br><span class="muted">Used across login and motor registry</span></div>
+          </div>
           <label class="field">Email<input class="input" id="email" value="${esc(localStorage.getItem('vtrust.email') || '')}" placeholder="admin@vtrusttower.com.kh"></label>
           <label class="field"><span class="field-row">Password <a class="muted">Forgot?</a></span><input class="input" id="password" type="password" placeholder="Password"></label>
           <label class="check-row"><input type="checkbox" checked> Keep me signed in on this device</label>
@@ -377,7 +414,7 @@ function dashboardPage() {
       ${kpi('⌖', 'Visitors · today', visitors, '3 brands · 2 active', 'warn')}
     </div>
     <div class="split">
-      <div class="card"><div class="card-pad"><div class="field-row"><div><h3 class="card-title">Today's scan progress</h3><span class="muted">Fri 29 May 2026 · Officer Bunna</span></div><button class="secondary" data-nav="reports">View report</button></div><div class="bars">${[8,9,10,11,12,13,14,15].map((hour, i) => `<div class="bar"><span style="height:${40 + i * 8}px;background:var(--success)"></span><span style="height:${i > 3 ? 30 + i * 7 : 8}px;background:var(--accent)"></span><small>${hour}</small></div>`).join('')}</div></div></div>
+      <div class="card"><div class="card-pad"><div class="field-row"><div><h3 class="card-title">Today's scan progress</h3><span class="muted">${prettyDate(today)} · Officer Bunna</span></div><button class="secondary" data-nav="reports">View report</button></div><div class="bars">${[8,9,10,11,12,13,14,15].map((hour, i) => `<div class="bar"><span style="height:${40 + i * 8}px;background:var(--success)"></span><span style="height:${i > 3 ? 30 + i * 7 : 8}px;background:var(--accent)"></span><small>${hour}</small></div>`).join('')}</div></div></div>
       <div class="card"><div class="card-pad"><div class="field-row"><h3 class="card-title">Renewal alerts</h3><button class="secondary">Send reminders</button></div></div>${expired.concat(state.motors.filter(isSoon)).slice(0,5).map((m) => `<div class="list-row"><span class="dot red"></span><div><b>${esc(m.company)}</b><br><span class="muted mono">${esc(m.plate)} · exp ${esc(m.expiry)}</span></div><span class="badge red">${isExpired(m) ? 'Expired' : 'Soon'}</span></div>`).join('')}</div>
     </div>
     <div class="split">
@@ -433,10 +470,10 @@ function bindMotors() {
 }
 
 function reportsPage() {
-  const dates = Array.from({ length: 6 }, (_, i) => {
-    const d = new Date(today);
+  const dates = Array.from({ length: 5 }, (_, i) => {
+    const d = parseDateKey(today);
     d.setDate(d.getDate() - i);
-    return d.toISOString().slice(0, 10);
+    return dateKey(d);
   });
   const rows = state.report.filter((r) => {
     if (state.reportFilter === 'visitor') return r.company === 'VISITOR';
@@ -449,8 +486,8 @@ function reportsPage() {
   const visitorRows = rows.filter((r) => r.company === 'VISITOR');
   return h`
     <div class="reports-layout">
-      <div class="card"><div class="card-pad"><h3 class="card-title">May 2026</h3><span class="muted">Pick a day to view</span></div>${dates.map((d) => `<div class="date-row ${state.reportDate === d ? 'active' : ''}" data-date="${d}"><b class="mono">${d}</b><br><span class="muted">AM 16 · PM 11 · V 3</span><span class="red-dot"></span></div>`).join('')}</div>
-      <div class="card"><div class="report-head"><div><div class="caps">Daily report</div><div class="report-title">${state.reportDate} · Friday</div><div class="mini-stats"><span class="caps">AM <b style="color:var(--success)">${state.report.filter(r=>r.morning).length}</b></span><span class="caps">PM <b style="color:var(--accent-dark)">${state.report.filter(r=>r.afternoon).length}</b></span><span class="caps">Visitor <b style="color:var(--visitor)">${visitorRows.length}</b></span><span class="caps">Expired <b style="color:var(--danger)">${rows.filter(r=>r.expiry && r.expiry < today).length}</b></span></div></div><div><button class="secondary">Copy</button> <button class="primary" id="exportReport">Export XLSX</button></div></div><div class="filterbar"><span class="muted">Filter:</span>${['all','am','pm','visitor','expired'].map(f => `<button class="chip ${state.reportFilter === f ? 'active' : ''}" data-report-filter="${f}">${f.toUpperCase()}</button>`).join('')}<span style="margin-left:auto" class="muted">${rows.length} rows</span></div><div style="overflow:auto"><table><thead><tr><th>Ref</th><th>No.</th><th>Company</th><th>Type</th><th>Months</th><th>Expiry</th><th>Brand</th><th>Model</th><th>Plate Prefix</th><th>Plate Number</th><th>Morning</th><th>Afternoon</th></tr></thead><tbody>${reportRows(companyRows)}${visitorRows.length ? `<tr class="divider-row"><td colspan="12">Visitors (${visitorRows.length})</td></tr>${reportRows(visitorRows)}` : ''}</tbody></table></div></div>
+      <div class="card"><div class="card-pad"><h3 class="card-title">${monthTitle(today)}</h3><span class="muted">Latest 5 days</span></div>${dates.map((d) => `<div class="date-row ${state.reportDate === d ? 'active' : ''}" data-date="${d}"><b class="mono">${d}</b><br><span class="muted">${prettyDate(d, { year: false })}</span>${d === today ? '<span class="red-dot"></span>' : ''}</div>`).join('')}</div>
+      <div class="card"><div class="report-head"><div><div class="caps">Daily report</div><div class="report-title">${state.reportDate} · ${weekdayName(state.reportDate)}</div><div class="mini-stats"><span class="caps">AM <b style="color:var(--success)">${state.report.filter(r=>r.morning).length}</b></span><span class="caps">PM <b style="color:var(--accent-dark)">${state.report.filter(r=>r.afternoon).length}</b></span><span class="caps">Visitor <b style="color:var(--visitor)">${visitorRows.length}</b></span><span class="caps">Expired <b style="color:var(--danger)">${rows.filter(r=>r.expiry && r.expiry < today).length}</b></span></div></div><div><button class="secondary">Copy</button> <button class="primary" id="exportReport">Export XLSX</button></div></div><div class="filterbar"><span class="muted">Filter:</span>${['all','am','pm','visitor','expired'].map(f => `<button class="chip ${state.reportFilter === f ? 'active' : ''}" data-report-filter="${f}">${f.toUpperCase()}</button>`).join('')}<span style="margin-left:auto" class="muted">${rows.length} rows</span></div><div style="overflow:auto"><table><thead><tr><th>Ref</th><th>No.</th><th>Company</th><th>Type</th><th>Months</th><th>Expiry</th><th>Brand</th><th>Model</th><th>Plate Prefix</th><th>Plate Number</th><th>Morning</th><th>Afternoon</th></tr></thead><tbody>${reportRows(companyRows)}${visitorRows.length ? `<tr class="divider-row"><td colspan="12">Visitors (${visitorRows.length})</td></tr>${reportRows(visitorRows)}` : ''}</tbody></table></div></div>
     </div>`;
 }
 

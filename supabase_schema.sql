@@ -56,6 +56,19 @@ create table scan_records (
   unique (scan_session_id, plate)
 );
 
+create table known_visitors (
+  id uuid primary key default gen_random_uuid(),
+  plate text not null unique,
+  city text not null default 'PHNOM PENH',
+  brand text not null,
+  model text not null,
+  first_seen_at timestamptz not null default now(),
+  last_seen_at timestamptz not null default now(),
+  visit_count int not null default 1,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 create view daily_scan_report as
 select
   min(sr.ref) as ref,
@@ -80,3 +93,4 @@ alter table companies enable row level security;
 alter table registered_motors enable row level security;
 alter table scan_sessions enable row level security;
 alter table scan_records enable row level security;
+alter table known_visitors enable row level security;

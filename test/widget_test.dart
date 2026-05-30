@@ -7,7 +7,8 @@ void main() {
   testWidgets('MotoSheet opens on the parking list', (tester) async {
     await tester.pumpWidget(const MotoSheetApp());
 
-    expect(find.textContaining('Parked'), findsWidgets);
+    expect(find.text('Morning'), findsOneWidget);
+    expect(find.text('Morning round'), findsOneWidget);
     expect(find.text('Scan plate'), findsOneWidget);
     expect(find.text('1HH-4722'), findsOneWidget);
   });
@@ -38,14 +39,19 @@ void main() {
     expect(extractPlateNumber('SHV-67B9'), 'SHV-6789');
   });
 
-  testWidgets('editing a detected plate closes without framework errors', (tester) async {
+  testWidgets('editing a detected plate closes without framework errors', (
+    tester,
+  ) async {
     await tester.pumpWidget(
       MaterialApp(
         home: Builder(
           builder: (context) => TextButton(
             onPressed: () => showDialog<PlateDetection>(
               context: context,
-              builder: (_) => const EditPlateDialog(initialPlate: '2K-6326', initialCity: 'PHNOM PENH'),
+              builder: (_) => const EditPlateDialog(
+                initialPlate: '2K-6326',
+                initialCity: 'PHNOM PENH',
+              ),
             ),
             child: const Text('Edit'),
           ),
@@ -79,6 +85,6 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.text('1HH-4722'), findsNothing);
-    expect(find.text('All · 0'), findsOneWidget);
+    expect(find.text('All  0'), findsOneWidget);
   });
 }

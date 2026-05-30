@@ -28,6 +28,8 @@ drop policy if exists "motosheet read scan sessions" on scan_sessions;
 drop policy if exists "motosheet write scan sessions" on scan_sessions;
 drop policy if exists "motosheet read scan records" on scan_records;
 drop policy if exists "motosheet write scan records" on scan_records;
+drop policy if exists "motosheet read known visitors" on known_visitors;
+drop policy if exists "motosheet write known visitors" on known_visitors;
 
 create policy "motosheet read companies"
 on companies for select
@@ -73,13 +75,26 @@ to anon, authenticated
 using (true)
 with check (true);
 
+create policy "motosheet read known visitors"
+on known_visitors for select
+to anon, authenticated
+using (true);
+
+create policy "motosheet write known visitors"
+on known_visitors for all
+to anon, authenticated
+using (true)
+with check (true);
+
 grant usage on schema public to anon, authenticated;
 grant select on companies to anon;
 grant select on registered_motors to anon;
 grant select, insert, update on scan_sessions to anon;
 grant select, insert, update on scan_records to anon;
+grant select, insert, update on known_visitors to anon;
 grant select, insert, update, delete on companies to authenticated;
 grant select, insert, update, delete on registered_motors to authenticated;
 grant select, insert, update on scan_sessions to authenticated;
 grant select, insert, update on scan_records to authenticated;
+grant select, insert, update, delete on known_visitors to authenticated;
 grant select on daily_scan_report to authenticated;
