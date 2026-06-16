@@ -89,6 +89,7 @@ const state = {
   statusFilter: 'all',
   reportDate: today,
   reportFilter: 'all',
+  reportShiftTimes: emptyShiftTimes(),
   selectedCompany: seedCompanies[0].id,
   message: '',
 };
@@ -125,6 +126,53 @@ function plateChip(plate) {
   const { prefix, number } = plateParts(plate);
   const displayPlate = [prefix, number].filter(Boolean).join('-');
   return `<div class="plate"><b>${esc(displayPlate)}</b><span class="plate-line"></span><small>PHNOM PENH</small></div>`;
+}
+
+function emptyShiftTimes() {
+  return {
+    morning: { first: '', last: '' },
+    afternoon: { first: '', last: '' },
+  };
+}
+
+function formatScanTime(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleTimeString('en-GB', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
+}
+
+function summarizeShiftTimes(rows) {
+  const grouped = { morning: [], afternoon: [] };
+  for (const row of rows || []) {
+    const session = row.scan_sessions?.session_type;
+    const time = row.scanned_at || row.scannedAt;
+    if (!grouped[session] || !time) continue;
+    grouped[session].push(new Date(time));
+  }
+  return Object.fromEntries(Object.entries(grouped).map(([session, values]) => {
+    values.sort((a, b) => a - b);
+    return [session, {
+      first: values.length ? formatScanTime(values[0]) : '',
+      last: values.length ? formatScanTime(values[values.length - 1]) : '',
+    }];
+  }));
+}
+
+function seedShiftTimes(rows) {
+  const scanRows = [];
+  for (const row of rows || []) {
+    if (row.morning && row.morning !== '✓') {
+      scanRows.push({ scannedAt: `${state.reportDate}T${row.morning}:00`, scan_sessions: { session_type: 'morning' } });
+    }
+    if (row.afternoon && row.afternoon !== '✓') {
+      scanRows.push({ scannedAt: `${state.reportDate}T${row.afternoon}:00`, scan_sessions: { session_type: 'afternoon' } });
+    }
+  }
+  return summarizeShiftTimes(scanRows);
 }
 
 async function loadData() {
@@ -243,9 +291,25 @@ async function loadReport() {
       morning: r.morning ? '✓' : '',
       afternoon: r.afternoon ? '✓' : '',
     }));
+    try {
+      state.reportShiftTimes = await loadReportShiftTimes();
+    } catch (_) {
+      state.reportShiftTimes = emptyShiftTimes();
+    }
   } catch (_) {
     state.report = makeSeedReport(state.reportDate);
+    state.reportShiftTimes = seedShiftTimes(state.report);
   }
+}
+
+async function loadReportShiftTimes() {
+  const { data, error } = await supabase
+    .from('scan_records')
+    .select('scanned_at,scan_sessions!inner(scan_date,session_type)')
+    .eq('scan_sessions.scan_date', state.reportDate)
+    .order('scanned_at');
+  if (error) throw error;
+  return summarizeShiftTimes(data || []);
 }
 
 function makeSeedReport(date) {
@@ -469,6 +533,11 @@ function bindMotors() {
   document.getElementById('newMotor').onclick = openMotorModal;
 }
 
+function shiftTimeSummary(session, label, color) {
+  const times = state.reportShiftTimes[session] || {};
+  return `<span class="shift-time"><span class="caps">${label}</span><b style="color:${color}">${times.first || '—'} → ${times.last || '—'}</b><small>first → last scan</small></span>`;
+}
+
 function reportsPage() {
   const dates = Array.from({ length: 5 }, (_, i) => {
     const d = parseDateKey(today);
@@ -486,8 +555,8 @@ function reportsPage() {
   const visitorRows = rows.filter((r) => r.company === 'VISITOR');
   return h`
     <div class="reports-layout">
-      <div class="card"><div class="card-pad"><h3 class="card-title">${monthTitle(today)}</h3><span class="muted">Latest 5 days</span></div>${dates.map((d) => `<div class="date-row ${state.reportDate === d ? 'active' : ''}" data-date="${d}"><b class="mono">${d}</b><br><span class="muted">${prettyDate(d, { year: false })}</span>${d === today ? '<span class="red-dot"></span>' : ''}</div>`).join('')}</div>
-      <div class="card"><div class="report-head"><div><div class="caps">Daily report</div><div class="report-title">${state.reportDate} · ${weekdayName(state.reportDate)}</div><div class="mini-stats"><span class="caps">AM <b style="color:var(--success)">${state.report.filter(r=>r.morning).length}</b></span><span class="caps">PM <b style="color:var(--accent-dark)">${state.report.filter(r=>r.afternoon).length}</b></span><span class="caps">Visitor <b style="color:var(--visitor)">${visitorRows.length}</b></span><span class="caps">Expired <b style="color:var(--danger)">${rows.filter(r=>r.expiry && r.expiry < today).length}</b></span></div></div><div><button class="secondary">Copy</button> <button class="primary" id="exportReport">Export XLSX</button></div></div><div class="filterbar"><span class="muted">Filter:</span>${['all','am','pm','visitor','expired'].map(f => `<button class="chip ${state.reportFilter === f ? 'active' : ''}" data-report-filter="${f}">${f.toUpperCase()}</button>`).join('')}<span style="margin-left:auto" class="muted">${rows.length} rows</span></div><div style="overflow:auto"><table><thead><tr><th>Ref</th><th>No.</th><th>Company</th><th>Type</th><th>Months</th><th>Expiry</th><th>Brand</th><th>Model</th><th>Plate Prefix</th><th>Plate Number</th><th>Morning</th><th>Afternoon</th></tr></thead><tbody>${reportRows(companyRows)}${visitorRows.length ? `<tr class="divider-row"><td colspan="12">Visitors (${visitorRows.length})</td></tr>${reportRows(visitorRows)}` : ''}</tbody></table></div></div>
+      <div class="card"><div class="card-pad"><h3 class="card-title">${monthTitle(state.reportDate)}</h3><span class="muted">Filter by date</span><input type="date" class="input report-date-input" id="reportDatePicker" value="${state.reportDate}"></div>${dates.map((d) => `<div class="date-row ${state.reportDate === d ? 'active' : ''}" data-date="${d}"><b class="mono">${d}</b><br><span class="muted">${prettyDate(d, { year: false })}</span>${d === today ? '<span class="red-dot"></span>' : ''}</div>`).join('')}</div>
+      <div class="card"><div class="report-head"><div><div class="caps">Daily report</div><div class="report-title">${state.reportDate} · ${weekdayName(state.reportDate)}</div><div class="mini-stats"><span class="caps">AM <b style="color:var(--success)">${state.report.filter(r=>r.morning).length}</b></span><span class="caps">PM <b style="color:var(--accent-dark)">${state.report.filter(r=>r.afternoon).length}</b></span><span class="caps">Visitor <b style="color:var(--visitor)">${visitorRows.length}</b></span><span class="caps">Expired <b style="color:var(--danger)">${rows.filter(r=>r.expiry && r.expiry < today).length}</b></span></div><div class="shift-times">${shiftTimeSummary('morning', 'Morning time', 'var(--success)')}${shiftTimeSummary('afternoon', 'Afternoon time', 'var(--accent-dark)')}</div></div><div><button class="secondary">Copy</button> <button class="primary" id="exportReport">Export XLSX</button></div></div><div class="filterbar"><span class="muted">Filter:</span>${['all','am','pm','visitor','expired'].map(f => `<button class="chip ${state.reportFilter === f ? 'active' : ''}" data-report-filter="${f}">${f.toUpperCase()}</button>`).join('')}<span style="margin-left:auto" class="muted">${rows.length} rows</span></div><div style="overflow:auto"><table><thead><tr><th>Ref</th><th>No.</th><th>Company</th><th>Type</th><th>Months</th><th>Expiry</th><th>Brand</th><th>Model</th><th>Plate Prefix</th><th>Plate Number</th><th>Morning</th><th>Afternoon</th></tr></thead><tbody>${reportRows(companyRows)}${visitorRows.length ? `<tr class="divider-row"><td colspan="12">Visitors (${visitorRows.length})</td></tr>${reportRows(visitorRows)}` : ''}</tbody></table></div></div>
     </div>`;
 }
 
@@ -496,7 +565,14 @@ function reportRows(rows) {
 }
 
 function bindReports() {
-  document.querySelectorAll('[data-date]').forEach((row) => row.onclick = async () => { state.reportDate = row.dataset.date; await loadReport(); render(); });
+  const loadDate = async (date) => {
+    if (!date) return;
+    state.reportDate = date;
+    await loadReport();
+    render();
+  };
+  document.getElementById('reportDatePicker').onchange = (event) => loadDate(event.target.value);
+  document.querySelectorAll('[data-date]').forEach((row) => row.onclick = () => loadDate(row.dataset.date));
   document.querySelectorAll('[data-report-filter]').forEach((b) => b.onclick = () => { state.reportFilter = b.dataset.reportFilter; render(); });
   document.getElementById('exportReport').onclick = exportReportCsv;
 }
